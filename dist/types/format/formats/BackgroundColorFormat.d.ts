@@ -1,0 +1,11 @@
+import type { IFormat } from '../IFormat.js';
+import type { AnyElement, ElementStyle, ElementType } from '../../types/index.js';
+export declare class BackgroundColorFormat implements IFormat<string> {
+    id: string;
+    name: string;
+    group: string;
+    appliesTo: ElementType[];
+    getValue(el: AnyElement): string;
+    apply(_: AnyElement, value: string): Partial<ElementStyle>;
+    renderControl(el: AnyElement, onChange: (v: string) => void): HTMLElement;
+}
