@@ -1,0 +1,56 @@
+import type { ElementStyle } from '../types/index.js';
+
+export const DEFAULT_STYLE: ElementStyle = {
+  width: 200,
+  height: 100,
+  x: 0,
+  y: 0,
+  paddingTop: 0,
+  paddingRight: 0,
+  paddingBottom: 0,
+  paddingLeft: 0,
+  marginTop: 0,
+  marginRight: 0,
+  marginBottom: 0,
+  marginLeft: 0,
+  backgroundColor: 'transparent',
+  backgroundImage: '',
+  backgroundSize: 'cover',
+  backgroundPosition: 'center center',
+  backgroundRepeat: 'no-repeat',
+  border: { width: 0, color: '#000000', style: 'solid' },
+  borderRadiusTopLeft: 0,
+  borderRadiusTopRight: 0,
+  borderRadiusBottomRight: 0,
+  borderRadiusBottomLeft: 0,
+  isCircle: false,
+  flexDirection: 'column',
+  flexWrap: 'nowrap',
+  alignItems: 'flex-start',
+  justifyContent: 'flex-start',
+  gap: 0,
+  color: '#000000',
+  fontSize: 16,
+  fontWeight: '400',
+  fontFamily: 'Inter, sans-serif',
+  textAlign: 'left',
+  lineHeight: 1.5,
+  letterSpacing: 0,
+  textDecoration: 'none',
+  fontStyle: 'normal',
+  textTransform: 'none',
+  objectFit: 'cover',
+  opacity: 1,
+  shadow: null,
+  zIndex: 0,
+  rotation: 0,
+  scaleX: 1,
+  scaleY: 1,
+};
+
+export function mergeStyle(
+  base: ElementStyle,
+  patch: Partial<ElementStyle>
+): ElementStyle {
+  return { ...base, ...patch };
+}
