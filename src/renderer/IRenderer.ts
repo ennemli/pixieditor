@@ -1,7 +1,7 @@
 import type { DocumentState, AnyElement, SnapGuide, SelectionState } from '../types/index.js';
 
 export interface IRenderer {
-  mount(container: HTMLElement): void;
+  mount(container: HTMLElement): void | Promise<void>;
   render(document: DocumentState): void;
   updateElement(element: AnyElement): void;
   removeElement(id: string): void;

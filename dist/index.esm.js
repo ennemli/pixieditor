@@ -728,17 +728,30 @@ class PixiRenderer {
         this._showGrid = false;
         this._gridSize = 20;
         this._gridColor = 0xdddddd;
+        this._resizeObserver = null;
     }
     mount(container) {
-        this._app = new PIXI.Application({
+        const appOptions = {
             width: container.clientWidth,
             height: container.clientHeight,
             backgroundColor: 0xf3f4f6,
             antialias: true,
             resolution: window.devicePixelRatio || 1,
             autoDensity: true,
-        });
-        container.appendChild(this._app.view);
+        };
+        const supportsAsyncInit = typeof PIXI.Application?.prototype?.init === 'function';
+        if (supportsAsyncInit) {
+            this._app = new PIXI.Application();
+            return this._app.init(appOptions).then(() => {
+                container.appendChild(this._getView());
+                this._setupScene(container);
+            });
+        }
+        this._app = new PIXI.Application(appOptions);
+        container.appendChild(this._getView());
+        this._setupScene(container);
+    }
+    _setupScene(container) {
         this._rootStage = new PIXI.Container();
         this._app.stage.addChild(this._rootStage);
         this._gridLayer = new PIXI.Graphics();
@@ -748,12 +761,15 @@ class PixiRenderer {
         this._app.stage.addChild(this._guideLayer);
         this._app.stage.addChild(this._selectionLayer);
         // Handle resize
-        const ro = new ResizeObserver(() => {
+        this._resizeObserver = new ResizeObserver(() => {
             this._app.renderer.resize(container.clientWidth, container.clientHeight);
             if (this._doc)
                 this._drawGrid();
         });
-        ro.observe(container);
+        this._resizeObserver.observe(container);
+    }
+    _getView() {
+        return (this._app.canvas ?? this._app.view);
     }
     render(doc) {
         this._doc = doc;
@@ -828,7 +844,7 @@ class PixiRenderer {
         }
     }
     getWorldPosition(screenX, screenY) {
-        const bounds = this._app.view.getBoundingClientRect();
+        const bounds = this._getView().getBoundingClientRect();
         const canvasX = (screenX - bounds.left) / (this._app.renderer.resolution || 1);
         const canvasY = (screenY - bounds.top) / (this._app.renderer.resolution || 1);
         return {
@@ -857,7 +873,7 @@ class PixiRenderer {
         return null;
     }
     getCanvas() {
-        return this._app.view;
+        return this._getView();
     }
     getStageOffset() {
         return { x: this._rootStage.x, y: this._rootStage.y };
@@ -869,7 +885,9 @@ class PixiRenderer {
         this._drawGrid();
     }
     destroy() {
-        this._app.destroy(true, { children: true });
+        this._resizeObserver?.disconnect();
+        this._resizeObserver = null;
+        this._app?.destroy(true, { children: true });
     }
     _drawDocBackground(doc) {
         if (!this._docBg) {
@@ -2649,6 +2667,7 @@ class Editor {
     constructor(_config) {
         this._config = _config;
         this._emitter = new EventEmitter();
+        this._interactionMounted = false;
         // ── 1. Core model ──────────────────────────────────────────────────────
         this._model = new DocumentModel(_config.document);
         this._history = new HistoryManager(this._emitter);
@@ -2681,32 +2700,43 @@ class Editor {
         this._api = this._buildAPI();
         // Mount panels (returns the canvas container div)
         const { canvasContainer } = this._panels.mount(container, this._api);
-        // Mount renderer into canvas container
-        this._renderer.mount(canvasContainer);
-        // Mount interaction on the canvas element
-        this._interaction.mount(this._renderer.getCanvas());
-        // Wire document changes → renderer re-render
-        this._emitter.on('document:change', ({ document }) => {
-            this._renderer.render(document);
-        });
-        this._emitter.on('element:update', ({ element }) => {
-            this._renderer.updateElement(element);
-        });
-        this._emitter.on('element:remove', ({ id }) => {
-            this._renderer.removeElement(id);
-        });
-        // Wire snap config → grid display
-        this._emitter.on('snap:change', ({ config }) => {
-            this._renderer.showGrid(config.grid, config.gridSize, config.gridColor);
-        });
-        // Initial render
-        this._renderer.render(this._model.getDocument());
-        if (this._snap.getConfig().grid) {
-            const cfg = this._snap.getConfig();
-            this._renderer.showGrid(cfg.grid, cfg.gridSize, cfg.gridColor);
+        const finishMount = () => {
+            // Mount interaction on the canvas element
+            this._interaction.mount(this._renderer.getCanvas());
+            this._interactionMounted = true;
+            // Wire document changes → renderer re-render
+            this._emitter.on('document:change', ({ document }) => {
+                this._renderer.render(document);
+            });
+            this._emitter.on('element:update', ({ element }) => {
+                this._renderer.updateElement(element);
+            });
+            this._emitter.on('element:remove', ({ id }) => {
+                this._renderer.removeElement(id);
+            });
+            // Wire snap config → grid display
+            this._emitter.on('snap:change', ({ config }) => {
+                this._renderer.showGrid(config.grid, config.gridSize, config.gridColor);
+            });
+            // Initial render
+            this._renderer.render(this._model.getDocument());
+            if (this._snap.getConfig().grid) {
+                const cfg = this._snap.getConfig();
+                this._renderer.showGrid(cfg.grid, cfg.gridSize, cfg.gridColor);
+            }
+            // Notify consumer
+            this._config.onReady?.(this._api);
+        };
+        // Mount renderer into canvas container (supports Pixi v7 sync and v8 async init)
+        const mountResult = this._renderer.mount(canvasContainer);
+        if (mountResult instanceof Promise) {
+            mountResult.then(() => finishMount()).catch((err) => {
+                console.error('[Editor] Failed to mount renderer:', err);
+            });
         }
-        // Notify consumer
-        this._config.onReady?.(this._api);
+        else {
+            finishMount();
+        }
         return this._api;
     }
     // ─── Build the public EditorAPI facade ──────────────────────────────────
@@ -2799,7 +2829,10 @@ class Editor {
                 return self._snap.getConfig();
             },
             destroy() {
-                self._interaction.destroy();
+                if (self._interactionMounted) {
+                    self._interaction.destroy();
+                    self._interactionMounted = false;
+                }
                 self._renderer.destroy();
                 self._emitter.removeAllListeners();
                 self._config.container.innerHTML = '';

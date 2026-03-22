@@ -19,7 +19,10 @@ export declare class PixiRenderer implements IRenderer {
     private _showGrid;
     private _gridSize;
     private _gridColor;
-    mount(container: HTMLElement): void;
+    private _resizeObserver;
+    mount(container: HTMLElement): void | Promise<void>;
+    private _setupScene;
+    private _getView;
     render(doc: DocumentState): void;
     updateElement(element: AnyElement): void;
     removeElement(id: string): void;

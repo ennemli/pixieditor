@@ -25,18 +25,33 @@ export class PixiRenderer implements IRenderer {
   private _showGrid = false;
   private _gridSize = 20;
   private _gridColor = 0xdddddd;
+  private _resizeObserver: ResizeObserver | null = null;
 
-  mount(container: HTMLElement): void {
-    this._app = new PIXI.Application({
+  mount(container: HTMLElement): void | Promise<void> {
+    const appOptions = {
       width: container.clientWidth,
       height: container.clientHeight,
       backgroundColor: 0xf3f4f6,
       antialias: true,
       resolution: window.devicePixelRatio || 1,
       autoDensity: true,
-    });
-    container.appendChild(this._app.view as HTMLCanvasElement);
+    };
 
+    const supportsAsyncInit = typeof (PIXI.Application as any)?.prototype?.init === 'function';
+    if (supportsAsyncInit) {
+      this._app = new PIXI.Application();
+      return (this._app as any).init(appOptions).then(() => {
+        container.appendChild(this._getView());
+        this._setupScene(container);
+      });
+    }
+
+    this._app = new PIXI.Application(appOptions);
+    container.appendChild(this._getView());
+    this._setupScene(container);
+  }
+
+  private _setupScene(container: HTMLElement): void {
     this._rootStage = new PIXI.Container();
     this._app.stage.addChild(this._rootStage);
 
@@ -50,11 +65,15 @@ export class PixiRenderer implements IRenderer {
     this._app.stage.addChild(this._selectionLayer);
 
     // Handle resize
-    const ro = new ResizeObserver(() => {
+    this._resizeObserver = new ResizeObserver(() => {
       this._app.renderer.resize(container.clientWidth, container.clientHeight);
       if (this._doc) this._drawGrid();
     });
-    ro.observe(container);
+    this._resizeObserver.observe(container);
+  }
+
+  private _getView(): HTMLCanvasElement {
+    return (((this._app as any).canvas ?? (this._app as any).view) as HTMLCanvasElement);
   }
 
   render(doc: DocumentState): void {
@@ -136,7 +155,7 @@ export class PixiRenderer implements IRenderer {
   }
 
   getWorldPosition(screenX: number, screenY: number): { x: number; y: number } {
-    const bounds = (this._app.view as HTMLCanvasElement).getBoundingClientRect();
+    const bounds = this._getView().getBoundingClientRect();
     const canvasX = (screenX - bounds.left) / (this._app.renderer.resolution || 1);
     const canvasY = (screenY - bounds.top) / (this._app.renderer.resolution || 1);
     return {
@@ -165,7 +184,7 @@ export class PixiRenderer implements IRenderer {
   }
 
   getCanvas(): HTMLCanvasElement {
-    return this._app.view as HTMLCanvasElement;
+    return this._getView();
   }
 
   getStageOffset(): { x: number; y: number } {
@@ -180,7 +199,9 @@ export class PixiRenderer implements IRenderer {
   }
 
   destroy(): void {
-    this._app.destroy(true, { children: true });
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
+    this._app?.destroy(true, { children: true });
   }
 
   // ─── Private ─────────────────────────────────────────────────────────────

@@ -22,6 +22,7 @@ export declare class Editor {
     private readonly _menu;
     private readonly _panels;
     private _api;
+    private _interactionMounted;
     constructor(_config: EditorConfig);
     /**
      * Mount the editor into the given container and return the public API.

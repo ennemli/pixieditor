@@ -59,6 +59,7 @@ export class Editor {
   private readonly _menu: MenuManager;
   private readonly _panels: PanelManager;
   private _api!: EditorAPI;
+  private _interactionMounted = false;
 
   constructor(private readonly _config: EditorConfig) {
     // ── 1. Core model ──────────────────────────────────────────────────────
@@ -107,38 +108,48 @@ export class Editor {
     // Mount panels (returns the canvas container div)
     const { canvasContainer } = this._panels.mount(container, this._api);
 
-    // Mount renderer into canvas container
-    this._renderer.mount(canvasContainer);
+    const finishMount = (): void => {
+      // Mount interaction on the canvas element
+      this._interaction.mount(this._renderer.getCanvas());
+      this._interactionMounted = true;
 
-    // Mount interaction on the canvas element
-    this._interaction.mount(this._renderer.getCanvas());
+      // Wire document changes → renderer re-render
+      this._emitter.on('document:change', ({ document }) => {
+        this._renderer.render(document);
+      });
+      this._emitter.on('element:update', ({ element }) => {
+        this._renderer.updateElement(element);
+      });
+      this._emitter.on('element:remove', ({ id }) => {
+        this._renderer.removeElement(id);
+      });
 
-    // Wire document changes → renderer re-render
-    this._emitter.on('document:change', ({ document }) => {
-      this._renderer.render(document);
-    });
-    this._emitter.on('element:update', ({ element }) => {
-      this._renderer.updateElement(element);
-    });
-    this._emitter.on('element:remove', ({ id }) => {
-      this._renderer.removeElement(id);
-    });
+      // Wire snap config → grid display
+      this._emitter.on('snap:change', ({ config }) => {
+        this._renderer.showGrid(config.grid, config.gridSize, config.gridColor);
+      });
 
-    // Wire snap config → grid display
-    this._emitter.on('snap:change', ({ config }) => {
-      this._renderer.showGrid(config.grid, config.gridSize, config.gridColor);
-    });
+      // Initial render
+      this._renderer.render(this._model.getDocument());
 
-    // Initial render
-    this._renderer.render(this._model.getDocument());
+      if (this._snap.getConfig().grid) {
+        const cfg = this._snap.getConfig();
+        this._renderer.showGrid(cfg.grid, cfg.gridSize, cfg.gridColor);
+      }
 
-    if (this._snap.getConfig().grid) {
-      const cfg = this._snap.getConfig();
-      this._renderer.showGrid(cfg.grid, cfg.gridSize, cfg.gridColor);
+      // Notify consumer
+      this._config.onReady?.(this._api);
+    };
+
+    // Mount renderer into canvas container (supports Pixi v7 sync and v8 async init)
+    const mountResult = this._renderer.mount(canvasContainer);
+    if (mountResult instanceof Promise) {
+      mountResult.then(() => finishMount()).catch((err) => {
+        console.error('[Editor] Failed to mount renderer:', err);
+      });
+    } else {
+      finishMount();
     }
-
-    // Notify consumer
-    this._config.onReady?.(this._api);
 
     return this._api;
   }
@@ -263,7 +274,10 @@ export class Editor {
       },
 
       destroy(): void {
-        self._interaction.destroy();
+        if (self._interactionMounted) {
+          self._interaction.destroy();
+          self._interactionMounted = false;
+        }
         self._renderer.destroy();
         self._emitter.removeAllListeners();
         self._config.container.innerHTML = '';
